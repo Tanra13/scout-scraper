@@ -97,12 +97,17 @@ def upsert(rows: list[dict]) -> tuple[int, int, str]:
     return ok, bad, first_err
 
 
-def expire_stale(days: int) -> str:
+def expire_stale(days: int, platforms: list[str]) -> str:
+    """Hide listings not seen for `days` days, ONLY for platforms this run scraped successfully.
+    Rows from other platforms (e.g. LinkedIn, loaded by something else) are never touched."""
+    if not platforms:
+        return "skipped (no platform scraped OK)"
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    plist = ",".join('"' + p.replace('"', "") + '"' for p in sorted(platforms))
     r = requests.patch(f"{config.SUPABASE_URL}/rest/v1/listings",
-                       params={"is_active": "eq.true", "scraped_at": f"lt.{cutoff}"},
+                       params={"is_active": "eq.true", "scraped_at": f"lt.{cutoff}", "platform": f"in.({plist})"},
                        json={"is_active": False}, timeout=60, headers=_headers({"Prefer": "return=minimal"}))
-    return f"HTTP {r.status_code}" + ("" if r.status_code in (200, 204) else f" {r.text[:200]}")
+    return f"HTTP {r.status_code} for {len(platforms)} platforms" + ("" if r.status_code in (200, 204) else f" {r.text[:200]}")
 
 
 # ── reporting ────────────────────────────────────────────────────────────────
@@ -194,7 +199,8 @@ def main() -> int:
         if ok == 0:
             code = 2
         if not args.no_expire and ok > 0:
-            extra.append(f"Expired listings not seen for {config.STALE_DAYS} days: {expire_stale(config.STALE_DAYS)}")
+            ok_platforms = sorted({row["platform"] for r in results if r["status"] == "OK" for row in r["rows"]})
+            extra.append(f"Expired listings not seen for {config.STALE_DAYS} days: {expire_stale(config.STALE_DAYS, ok_platforms)}")
 
     print("\n" + report(results, disabled, extra))
     return code
