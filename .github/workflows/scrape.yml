@@ -1,0 +1,48 @@
+name: Scout Scraper
+
+on:
+  schedule:
+    - cron: "0 3 * * *"    # 08:30 IST
+    - cron: "30 10 * * *"  # 16:00 IST
+  workflow_dispatch:
+    inputs:
+      pages:
+        description: "Pages per source"
+        required: false
+        default: "5"
+      only:
+        description: "Only these sources, comma-separated (blank = all)"
+        required: false
+        default: ""
+      dry_run:
+        description: "Dry run: scrape and report, write nothing"
+        type: boolean
+        default: false
+
+concurrency:
+  group: scout-scraper
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - run: pip install -r requirements.txt
+
+      - name: Run scrapers
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          ARGS="--pages ${{ github.event.inputs.pages || '5' }}"
+          if [ -n "${{ github.event.inputs.only }}" ]; then ARGS="$ARGS --only ${{ github.event.inputs.only }}"; fi
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then ARGS="$ARGS --dry-run"; fi
+          python main.py $ARGS

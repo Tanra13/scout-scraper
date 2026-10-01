@@ -1,0 +1,4 @@
+__pycache__/
+_backup-2026-07-27/
+.env
+scrape.workflow.yml
